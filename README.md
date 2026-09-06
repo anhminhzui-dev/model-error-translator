@@ -119,3 +119,4 @@ Ask for three things: the model manifests as they exist today, a week of real fa
 ## Licence
 
 Source-available, evaluation-only — read it, run it, quote it in a review; see `LICENSE`.
+
