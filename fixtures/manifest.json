@@ -1,0 +1,20 @@
+{
+  "manifest_version": 1,
+  "synthetic": true,
+  "models": {
+    "synthetic-refiner-xl": {
+      "required_fields": ["prompt", "image"],
+      "min_short_side_px": 1024,
+      "max_long_side_px": 4096,
+      "allowed_bit_depths": [16, 32],
+      "max_payload_bytes": 8388608
+    },
+    "synthetic-upscaler-lite": {
+      "required_fields": ["image"],
+      "min_short_side_px": 512,
+      "max_long_side_px": 2048,
+      "allowed_bit_depths": [8, 16, 32],
+      "max_payload_bytes": 2097152
+    }
+  }
+}

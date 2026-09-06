@@ -1,0 +1,3 @@
+{"synthetic": true, "request_id": "req-clean-01", "model": "synthetic-refiner-xl", "fields": {"prompt": "wide matte, dusk", "image": {"width": 2048, "height": 1365, "bit_depth": 32}}, "payload_bytes": 5242880}
+{"synthetic": true, "request_id": "req-clean-02", "model": "synthetic-refiner-xl", "fields": {"prompt": "hero prop turntable", "image": {"width": 1024, "height": 1024, "bit_depth": 16}}, "payload_bytes": 1048576}
+{"synthetic": true, "request_id": "req-clean-03", "model": "synthetic-upscaler-lite", "fields": {"image": {"width": 1200, "height": 800, "bit_depth": 8}}, "payload_bytes": 900000}
