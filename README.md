@@ -1,28 +1,26 @@
 # model-error-translator
 
-Refuses a bad model request before it is sent and turns a raw model failure into one artist-actionable sentence plus a hashed receipt.
+[![CI](https://github.com/anhminhzui-dev/model-error-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/anhminhzui-dev/model-error-translator/actions/workflows/ci.yml)
+[![Licence](https://img.shields.io/badge/licence-evaluation--only-blue)](LICENSE)
 
-[![CI](https://github.com/anhminhzui-dev/model-error-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/anhminhzui-dev/model-error-translator/actions/workflows/ci.yml) [![Licence: evaluation-only](https://img.shields.io/badge/licence-evaluation--only-lightgrey)](LICENSE)
+**Stop invalid requests before dispatch; explain failures without inventing certainty.**
 
-## Why this exists
+A deterministic admission and failure-translation prototype. A model manifest defines request limits; `dispatch()` calls the injected transport only after admission. Recognized failures produce a concise user message and an operator hint; unknown shapes abstain.
 
-> "…translates technical model behavior into validation and error messages an artist can actually act on … turning \"403: proxy model failed with [800 lines of garbage]\" into \"Your reference image needs to be at least 1024px wide and 32-bit; yours is 859px and 24-bit.\"" — Griptape (Foundry), Software Engineer, Model Integrations (job posting)
+```text
+request + manifest → admission → injected transport only on ADMIT
+failure payload → recognized shape or abstention → message + local correlation
+```
 
-Built for this posting, in a day, to show the shape of what I would do on day one.
+Timeouts retain unknown completion status. Rate-limit messages preserve the supplied retry interval without claiming a queue or guaranteed retry. Receipt files omit raw bodies and header values; their hashes are local correlation references, not provider-issued log records.
 
-## To the Griptape team
+The CLI checks local synthetic fixtures and makes no network call. The dispatch boundary is implemented; integration with an actual node graph, provider and users remains outside this prototype.
 
-This is the layer between a node graph and a hosted model. It does two things and refuses to do a third. **Before** a call it validates the request against a model manifest and refuses the bad send with a typed code and a sentence the artist can act on — the call never leaves the workstation. **After** a failed call it maps the raw failure payload to one typed code, one artist sentence and one operator hint, hashes the raw body into a receipt, and shows the artist none of it. **It never guesses**: a failure shape the rules do not recognise comes back `ABSTAIN_UNRECOGNISED` with its receipt id, because a guessed cause costs an artist a day of re-rendering the wrong thing.
-
-Sixty seconds to check it yourself: copy the tree, run `python -m pytest -q`, then the three commands under **Try it in 60 seconds**. The first returns GO and exit 0; the other two refuse and exit 2. Standard library only — nothing to install but `pytest`.
-
-Everything under `fixtures/` is invented for this repository. No real model, service, studio, artist or asset appears anywhere in it, and nothing here calls the network.
-
-## What a Nodes user sees, before and after
+## Synthetic integration examples: before and after
 
 | | before | after |
 |---|---|---|
-| 859 px, 24-bit reference | the call goes out, comes back `403`, and the node shows a proxy dump | **refused before the call:** "Your reference image needs to be at least 1024 px on the short side and 16- or 32-bit; yours is 859 px and 24-bit." |
+| 859 px, 24-bit reference | without preflight, invalid dimensions can reach a transport; a later `403` alone does not establish the cause | **refused before the call:** "Your reference image needs to be at least 1024 px on the short side and 16- or 32-bit; yours is 859 px and 24-bit." |
 | a proxy failure is reported | 60,214 bytes of HTML, stack frames and gateway traces (800 lines) in the node's error field | "The service reported it could not run synthetic-refiner-xl. The cause and completion state are unknown. Ask your pipeline TD to check before retrying; local correlation reference `rcpt-a7fa898ed8bcf340`." |
 | the service reports a rate limit | `429` and a raw header block | "The service reported a rate limit. Wait about 37 seconds before retrying. Queue and completion status are unknown." |
 | a request times out | no confirmed result | "The request timed out; completion is unknown. Check whether it completed before retrying." The full message also supplies a local correlation reference. |
@@ -114,13 +112,19 @@ One JSON object per model id; the admission checks read nothing else, so adding 
 
 Every limit turns into its own code and its own clause in the artist sentence: several broken limits on one image produce one sentence ("needs to be at least 1024 px on the short side and 16- or 32-bit; yours is 859 px and 24-bit"), not three error dialogs. `python -m model_error_translator.cli check` is the same code path a node would call in-process — `dispatch(request, manifest, transport)` is the seam, and the transport is reached only on ADMIT.
 
-## Boundaries
+## Scope and integration
 
-Built for one posting, in a day: this is a design sample, not maintained software. No accuracy is claimed here and none is computable from what ships here. The manifests, requests and failure payloads are invented for this repository, a synthetic deck — including the 800-line 403 body, which is synthetic garbage generated to be as unreadable as the real thing. There is no network code path and no subprocess, and a test greps `src/` to keep it that way. Every constant is a design choice of this prototype, not a validated operating point: the two model profiles, the six raw failure shapes, the choice to hash the whole payload rather than the body alone, and the decision that an unrecognised 403 abstains instead of borrowing the nearest code. 7 of 7 failure payloads here are matched or abstained by construction, because I wrote both the matchers and the payloads — the honest number is the one measured against a real proxy's failure corpus, which I do not have.
+The synthetic manifests and failure payloads exercise request admission, known-error translation and abstention on unknown failures. The seven supplied cases were designed alongside the matchers; they are regression examples, not a provider-coverage estimate.
 
-## What I would do on day one at Griptape
+Model profiles and matching rules are explicit configuration choices. Timeouts preserve uncertainty about completion; local receipt hashes correlate payloads without implying provider-log access. Extend the mappings against a representative failure corpus before operational use. No network or subprocess path is present.
+
+## Integration path
 
 Ask for three things: the model manifests as they exist today, a week of real failure bodies off the proxy, and the five error messages artists complain about most. Then run this matcher table over that corpus and report one number with its denominator — the share of real failure bodies that reach a named code — and treat the abstain rate as the thing that has to fall, one named shape at a time, rather than hiding misses behind a catch-all message. Manifests move into the model integration itself so a new checkpoint ships its limits with it, and every artist-facing string gets read out loud by someone who does not know what a proxy is. What I would not ship is a translator that has never been shown to miss: the falsifier test in this repository is the habit, not the demo.
+
+## Project context
+
+Problem definition, architecture and acceptance review: **Minh Vo**, with AI-assisted implementation. This focused tool belongs to a broader body of data, assessment and training-systems work described in the [research overview](https://github.com/anhminhzui-dev#research-engineering-the-evidence-behind-ai-judgement). Its runnable scope is the mechanism documented here.
 
 ## Licence
 
