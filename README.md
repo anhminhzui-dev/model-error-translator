@@ -1,5 +1,11 @@
 # model-error-translator
 
+Refuses a bad model request before it is sent and turns a raw model failure into one artist-actionable sentence plus a hashed receipt.
+
+[![CI](https://github.com/anhminhzui-dev/model-error-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/anhminhzui-dev/model-error-translator/actions/workflows/ci.yml) [![Licence: evaluation-only](https://img.shields.io/badge/licence-evaluation--only-lightgrey)](LICENSE)
+
+## Why this exists
+
 > "…translates technical model behavior into validation and error messages an artist can actually act on … turning \"403: proxy model failed with [800 lines of garbage]\" into \"Your reference image needs to be at least 1024px wide and 32-bit; yours is 859px and 24-bit.\"" — Griptape (Foundry), Software Engineer, Model Integrations (job posting)
 
 Built for this posting, in a day, to show the shape of what I would do on day one.
@@ -8,7 +14,7 @@ Built for this posting, in a day, to show the shape of what I would do on day on
 
 This is the layer between a node graph and a hosted model. It does two things and refuses to do a third. **Before** a call it validates the request against a model manifest and refuses the bad send with a typed code and a sentence the artist can act on — the call never leaves the workstation. **After** a failed call it maps the raw failure payload to one typed code, one artist sentence and one operator hint, hashes the raw body into a receipt, and shows the artist none of it. **It never guesses**: a failure shape the rules do not recognise comes back `ABSTAIN_UNRECOGNISED` with its receipt id, because a guessed cause costs an artist a day of re-rendering the wrong thing.
 
-Sixty seconds to check it yourself: copy the tree, run `python -m pytest -q`, then the three commands under **Run it**. The first returns GO and exit 0; the other two refuse and exit 2. Standard library only — nothing to install but `pytest`.
+Sixty seconds to check it yourself: copy the tree, run `python -m pytest -q`, then the three commands under **Try it in 60 seconds**. The first returns GO and exit 0; the other two refuse and exit 2. Standard library only — nothing to install but `pytest`.
 
 Everything under `fixtures/` is invented for this repository. No real model, service, studio, artist or asset appears anywhere in it, and nothing here calls the network.
 
@@ -17,11 +23,12 @@ Everything under `fixtures/` is invented for this repository. No real model, ser
 | | before | after |
 |---|---|---|
 | 859 px, 24-bit reference | the call goes out, comes back `403`, and the node shows a proxy dump | **refused before the call:** "Your reference image needs to be at least 1024 px on the short side and 16- or 32-bit; yours is 859 px and 24-bit." |
-| the proxy drops the upstream | 60,214 bytes of HTML, stack frames and gateway traces (800 lines) in the node's error field | one sentence: "The service could not run synthetic-refiner-xl on this send and did not say why in a form this node can read. Nothing in your scene caused it. Send it again once; if it fails a second time, give your pipeline TD receipt `rcpt-a7fa898ed8bcf340`." |
-| the service is busy | `429` and a raw header block | "The service is busy and asked us to wait about 37 seconds. Your send is queued and nothing is lost." |
-| a shape nobody has seen before | a guess, or a stack trace | `ABSTAIN` — "Something went wrong with this send and this node will not guess at what. It is logged as receipt `rcpt-82fce3cbf0ea806d` for your pipeline TD." |
+| a proxy failure is reported | 60,214 bytes of HTML, stack frames and gateway traces (800 lines) in the node's error field | "The service reported it could not run synthetic-refiner-xl. The cause and completion state are unknown. Ask your pipeline TD to check before retrying; local correlation reference `rcpt-a7fa898ed8bcf340`." |
+| the service reports a rate limit | `429` and a raw header block | "The service reported a rate limit. Wait about 37 seconds before retrying. Queue and completion status are unknown." |
+| a request times out | no confirmed result | "The request timed out; completion is unknown. Check whether it completed before retrying." The full message also supplies a local correlation reference. |
+| a shape nobody has seen before | a guess, or a stack trace | `ABSTAIN` — "Something went wrong with this send and this node will not guess at what. Give your pipeline TD local correlation reference `rcpt-82fce3cbf0ea806d`." |
 
-The operator hint is the other half and is never shown to the artist: `PROXY_MODEL_FAILED: status=403 transport=none body_bytes=60214 sha256=a7fa898e… -- pull the full body from the proxy log by receipt rcpt-a7fa898ed8bcf340; the artist was shown none of it.` The receipt is the join between the two audiences: the artist gets a sentence and an id, the TD gets the id and the hash, and nobody has to paste a proxy dump into a chat window.
+The operator hint is the other half: `PROXY_MODEL_FAILED: status=403 transport=none body_bytes=60214 sha256=a7fa898e… -- local correlation reference rcpt-a7fa898ed8bcf340; provider-log lookup is not verified. Raw body omitted.` The reference is generated locally from the supplied failure payload. It is not a provider-issued request id or proof that any log retained the body. A host integration decides where to display these fields; this prototype has no queue, retry executor or remote-completion check.
 
 ## The codes
 
@@ -41,7 +48,7 @@ The last row of each column is the point of the whole thing. A 403 that carries 
 
 **Verdict law:** a batch is GO only if every request was admitted and every failure was translated to a known code. A refusal, or one unrecognised shape, is HOLD and exit 2.
 
-## Run it
+## Try it in 60 seconds
 
 ```
 $ PYTHONPATH=src python -m model_error_translator.cli check --manifest fixtures/manifest.json --requests fixtures/requests_clean.jsonl
@@ -78,13 +85,12 @@ $ echo $?
 2
 
 $ python -m pytest -q
-.............                                                            [100%]
-13 passed in 0.09s
+18 passed in 0.11s        # run 2026-09-07; includes the uncertainty and receipt regressions
 ```
 
 `runs/demo/summary.json` and `runs/demo/receipts.jsonl` carry ids, codes, counts and hashes only — no body, no header values, no prompt, no path. Two runs over the same inputs write byte-identical receipts, and a test asserts it.
 
-13 of 13 tests pass: one per bad request row (all 7 admission codes), one per failure payload (all 7 failure codes), one that the refusal text is exactly the sentence the posting asked for, one that the artist sentence contains no 24-character slice and no line of the raw body, one that a row without the `"synthetic": true` marker halts the run, one public-clean scan that plants five forbidden shapes and requires each to fire before a clean tree counts, one that no network- or process-capable import exists under `src/`, and `test_falsifier_image_checks_disabled_send_the_859px_reference_to_the_model`, which switches the image checks off through the `checks=` seam and proves the 859 px reference then travels all the way to a recording transport. A gate that has never been shown to miss something certifies nothing.
+The suite covers all 7 admission codes and all 7 failure codes, the exact admission sentence, raw-body privacy, synthetic-input refusal, public-clean and network scans, and the recording-transport falsifier. Regression cases preserve the supplied retry interval, keep timeout completion unknown, and reject invented queue, side-effect and provider-log assurances. `test_falsifier_image_checks_disabled_send_the_859px_reference_to_the_model` switches the image checks off through the `checks=` seam and proves the 859 px reference then travels to a recording transport. These are synthetic mechanism tests, not production reliability evidence.
 
 ## How to add a model manifest
 
@@ -108,9 +114,9 @@ One JSON object per model id; the admission checks read nothing else, so adding 
 
 Every limit turns into its own code and its own clause in the artist sentence: several broken limits on one image produce one sentence ("needs to be at least 1024 px on the short side and 16- or 32-bit; yours is 859 px and 24-bit"), not three error dialogs. `python -m model_error_translator.cli check` is the same code path a node would call in-process — `dispatch(request, manifest, transport)` is the seam, and the transport is reached only on ADMIT.
 
-## What this is not
+## Boundaries
 
-No accuracy is claimed here and none is computable from what ships here. The manifests, requests and failure payloads are invented for this repository — including the 800-line 403 body, which is synthetic garbage generated to be as unreadable as the real thing. There is no network code path and no subprocess, and a test greps `src/` to keep it that way. Every constant is a design choice of this prototype, not a validated operating point: the two model profiles, the six raw failure shapes, the choice to hash the whole payload rather than the body alone, and the decision that an unrecognised 403 abstains instead of borrowing the nearest code. 7 of 7 failure payloads here are matched or abstained by construction, because I wrote both the matchers and the payloads — the honest number is the one measured against a real proxy's failure corpus, which I do not have.
+Built for one posting, in a day: this is a design sample, not maintained software. No accuracy is claimed here and none is computable from what ships here. The manifests, requests and failure payloads are invented for this repository, a synthetic deck — including the 800-line 403 body, which is synthetic garbage generated to be as unreadable as the real thing. There is no network code path and no subprocess, and a test greps `src/` to keep it that way. Every constant is a design choice of this prototype, not a validated operating point: the two model profiles, the six raw failure shapes, the choice to hash the whole payload rather than the body alone, and the decision that an unrecognised 403 abstains instead of borrowing the nearest code. 7 of 7 failure payloads here are matched or abstained by construction, because I wrote both the matchers and the payloads — the honest number is the one measured against a real proxy's failure corpus, which I do not have.
 
 ## What I would do on day one at Griptape
 
@@ -119,4 +125,3 @@ Ask for three things: the model manifests as they exist today, a week of real fa
 ## Licence
 
 Source-available, evaluation-only — read it, run it, quote it in a review; see `LICENSE`.
-
