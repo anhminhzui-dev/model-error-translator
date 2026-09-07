@@ -26,6 +26,7 @@ from model_error_translator.core import (
     explain_batch,
     load_manifest,
     read_rows,
+    translate,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -112,6 +113,35 @@ def test_every_failure_shape_maps_to_the_one_code_its_row_names():
     assert "about 37 seconds" in _by_id(result, "fail-429-busy").artist
 
 
+@pytest.mark.parametrize("seconds", [0, 37])
+def test_rate_limit_preserves_retry_interval_without_inventing_a_queue(seconds):
+    outcome = translate({"status": 429, "headers": {"Retry-After": str(seconds)}})
+    assert outcome.codes == ("RATE_LIMITED",)
+    assert f"about {seconds} seconds" in outcome.artist
+    assert "unknown" in outcome.artist.lower()
+    assert "queued" not in outcome.artist.lower() and "nothing is lost" not in outcome.artist.lower()
+
+
+def test_timeout_requires_checking_unknown_completion_before_retry():
+    outcome = translate({"transport": "timeout"})
+    assert outcome.codes == ("REQUEST_TIMEOUT",)
+    assert "completion is unknown" in outcome.artist.lower()
+    assert "before retrying" in outcome.artist.lower()
+    assert "dropped" not in outcome.artist.lower() and "nothing was written" not in outcome.artist.lower()
+
+
+def test_failure_messages_preserve_uncertainty_and_local_receipt_privacy():
+    for row in _rows(FAILURES):
+        outcome = translate(row)
+        assert "local correlation reference" in outcome.operator
+        assert outcome.receipt_id in outcome.operator
+        assert "proxy log by receipt" not in outcome.operator
+        if row["body"]:
+            assert row["body"] not in outcome.operator
+        for claim in ("Nothing in your scene caused it", "This one is ours to fix", "It is logged as"):
+            assert claim not in outcome.artist
+
+
 def test_an_unrecognised_failure_shape_abstains_with_a_receipt_and_never_guesses():
     outcome = _by_id(explain_batch(FAILURES), "fail-403-unknown")
     assert outcome.verdict == "ABSTAIN" and outcome.codes == ("ABSTAIN_UNRECOGNISED",)
@@ -155,6 +185,14 @@ def test_a_malformed_request_abstains_rather_than_being_forced_into_a_code():
     for broken in ({"synthetic": True, "request_id": "x", "model": "synthetic-refiner-xl"}, None):
         outcome = admit(broken, manifest)
         assert outcome.verdict == "ABSTAIN" and outcome.codes == ("MALFORMED_REQUEST",)
+
+
+def test_malformed_admission_does_not_invent_fault_attribution():
+    reached = []
+    outcome, response = dispatch(None, load_manifest(MANIFEST), reached.append)
+    assert outcome.verdict == "ABSTAIN" and response is None and reached == []
+    assert "fault is in the wiring" not in outcome.artist
+    assert "not in your image" not in outcome.artist
 
 
 def test_a_row_without_the_synthetic_marker_halts_the_run(tmp_path):

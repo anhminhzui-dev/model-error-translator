@@ -144,8 +144,8 @@ def _abstain_request(row_id: str, reason: str) -> Outcome:
         row_id,
         "ABSTAIN",
         ("MALFORMED_REQUEST",),
-        "This node could not read the request it was given, so nothing was sent. "
-        "Show your pipeline TD the node -- the fault is in the wiring, not in your image.",
+        "This gate could not read the required request details and has not called the model. "
+        "Ask your pipeline TD to check the supplied request fields.",
         f"MALFORMED_REQUEST: {reason}.",
     )
 
@@ -299,41 +299,42 @@ def translate(row: dict | None) -> Outcome:
     model_id = row.get("model", "this model")
     seconds = _retry_seconds(headers)
     wait = f"about {seconds} seconds" if seconds is not None else "a short while"
-    sent = f"{_mb(row['request_bytes'])} MB" if isinstance(row.get("request_bytes"), int) else "the send"
+    sent = f"reported request size {_mb(row['request_bytes'])} MB" if isinstance(row.get("request_bytes"), int) else "request size unavailable"
     artist = {
         "PROXY_MODEL_FAILED": (
-            f"The service could not run {model_id} on this send and did not say why in a form this node "
-            "can read. Nothing in your scene caused it. Send it again once; if it fails a second time, "
-            f"give your pipeline TD receipt {receipt}."
+            f"The service reported it could not run {model_id}. The cause and completion state are "
+            "unknown. Ask your pipeline TD to check before retrying; "
+            f"local correlation reference {receipt}."
         ),
         "PAYLOAD_REJECTED": (
-            f"The service refused this send as too large ({sent} went out). Send fewer frames, or "
+            f"The service refused this send as too large ({sent}). Send fewer frames, or "
             "drop the reference to a smaller resolution, and try again."
         ),
         "RATE_LIMITED": (
-            f"The service is busy and asked us to wait {wait}. Your send is queued and nothing is lost."
+            f"The service reported a rate limit. Wait {wait} before retrying. "
+            "Queue and completion status are unknown."
         ),
         "MODEL_SERVER_ERROR": (
-            "The model server broke part-way through your send. This one is ours to fix, not yours -- "
-            f"your pipeline TD needs receipt {receipt}."
+            "The service returned a server error. Completion is unknown; check before retrying. "
+            f"Give your pipeline TD local correlation reference {receipt}."
         ),
         "MALFORMED_RESPONSE": (
-            "The service answered with something this node could not read, so you are being shown nothing "
-            f"rather than half a result. Send it again; receipt {receipt} has the rest."
+            "The service returned a response this node could not parse. Check the result before "
+            f"retrying; local correlation reference {receipt}."
         ),
         "REQUEST_TIMEOUT": (
-            "The service did not answer in time, so this send was dropped. Nothing was written to your shot "
-            "-- send it again, or send fewer frames at once."
+            "The request timed out; completion is unknown. Check whether it completed before retrying. "
+            f"Give your pipeline TD local correlation reference {receipt}."
         ),
         "ABSTAIN_UNRECOGNISED": (
-            "Something went wrong with this send and this node will not guess at what. It is logged as "
-            f"receipt {receipt} for your pipeline TD."
+            "Something went wrong with this send and this node will not guess at what. "
+            f"Give your pipeline TD local correlation reference {receipt}."
         ),
     }[code]
     operator = (
         f"{code}: status={status if status is not None else 'none'} transport={row.get('transport') or 'none'} "
-        f"body_bytes={len(body.encode('utf-8'))} sha256={sha256_of(raw)[:32]} -- pull the full body from the "
-        f"proxy log by receipt {receipt}; the artist was shown none of it."
+        f"body_bytes={len(body.encode('utf-8'))} sha256={sha256_of(raw)[:32]} -- "
+        f"local correlation reference {receipt}; provider-log lookup is not verified. Raw body omitted."
     )
     verdict = "ABSTAIN" if code == "ABSTAIN_UNRECOGNISED" else "TRANSLATE"
     facts = {"status": status, "body_bytes": len(body.encode("utf-8")), "body_sha256": sha256_of(raw)}
